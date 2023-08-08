@@ -2,7 +2,8 @@ import * as utils from '../utils.js';
 
 const { PI, abs, min, max, sign, ceil, floor, log2, log10 } = Math;
 const { $, mix, clamp, dcheck } = utils;
-
+const note_freqs = [164, 174, 184, 195, 207, 220, 233, 246, 261, 277, 293, 311, 329, 349, 369, 391, 415, 440, 466, 493, 523, 554, 587, 622, 659, 698, 739, 783, 830, 880, 932, 987, 1046, 1108, 1174, 1244, 1318, 1396, 1479, 1567, 1661, 1760, 1864];
+const note_names = ["fa# 2", "sol 2", "sol# 2", "la 2", "la# 2", "si 2", "do 3", "do# 3", "ré 3", "ré# 3", "mi 3", "fa 3", "fa# 3", "sol 3", "sol# 3", "la 3", "la# 3", "si 3", "do 4", "do# 4", "ré 4", "ré# 4", "mi 4", "fa 4", "fa# 4", "sol 4", "sol# 4", "la 4", "la# 4", "si 4", "do 5", "do# 5", "ré 5", "ré# 5", "mi 5", "fa 5", "fa# 5", "sol 5", "sol# 5", "la 5", "la# 5", "si 5", "do 6"];
 let gui = new dat.GUI({ name: 'Config' });
 let canvas_fft = $('#spectrogram');
 let div_mover = $('#mover');
@@ -17,12 +18,12 @@ let canvas_timeline = $('#timeline');
 let actions = [];
 let timer = 0;
 let config = {}, prev_config = {};
-let defaultSampleRate = 48000;
+let defaultSampleRate = 12000;
 config.mimeType = 'audio/webm;codecs=opus';
 config.sampleRate = defaultSampleRate;
 config.frameSize = 1024;
 config.numFrames = 1024;
-config.dbRange = 1.5; // log10(re^2+im^2)
+config.dbRange = 1.25; // log10(re^2+im^2)
 config.audioKbps = 128;
 config.timeMin = 0; // sec
 config.timeMax = 0; // sec
@@ -148,7 +149,7 @@ async function openFile() {
 
 async function openSample() {
   await showStatus('Loading sample audio');
-  let res = await fetch('lapwing.mp3');
+  let res = await fetch('scale.mp3');
   let file = await res.blob();
   audio_file = file;
   config.timeMin = 0;
@@ -440,6 +441,72 @@ function drawVolumeTimeline() {
   ctx.putImageData(img, 0, 0);
 }
 
+function  drawPointTagArea(dx, dw, dy, dh)  {
+  let x0 = dx + dw;
+  let y0 = dy + dh;
+  if (!audio_signal) return;
+
+  if (!x0 && !y0) {
+    div_point.style.visibility = 'hidden';
+    div_hztag.style.visibility = 'hidden';
+    return;
+  }
+
+  let sr = config.sampleRate;
+  let duration = config.timeMax - config.timeMin;
+  let t = x0 * duration - dx * duration;
+  let f = (1 - y0) * sr / 2;
+  let sec = t.toFixed(2) + 's';
+  let hz = f.toFixed(0) + ' Hz';
+  let text = hz + ' ' + sec;
+
+  div_point.style.visibility = 'visible';
+  div_point.style.left = pct100(x0);
+  div_point.style.top = pct100(y0);
+
+  div_hztag.style.visibility = 'visible';
+  div_hztag.style.right = pct100(1 - x0);
+  div_hztag.style.bottom = pct100(1 - y0);
+  div_hztag.innerText = text;
+}
+
+function findNearestNote(hz) {
+  let left = 0;
+  let right = note_freqs.length - 1;
+  let closest;
+
+  while (left <= right) {
+    let mid = Math.floor((left + right) / 2);
+
+    if (note_freqs[mid] === hz) {
+      return mid;
+    }
+
+    if (note_freqs[mid] < hz) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+
+    if (!closest) {
+      closest = mid;
+    } else {
+      if (Math.abs(hz - note_freqs[mid]) < Math.abs(hz - note_freqs[closest])) {
+        closest = mid;
+      }
+    }
+  }
+  return closest;
+}
+function hzToBb(hz) {
+  if (hz < note_freqs[0] || hz > note_freqs[note_freqs.length - 1]) {
+    return hz.toFixed(0) + "Hz";
+  }
+  let i = findNearestNote(hz);
+  console.info('Note for:', hz.toFixed(0), 'Hz -> ', note_freqs[i], 'Hz = ', note_names[i]);
+  return note_names[i];
+}
+
 function drawPointTag(x0, y0) {
   if (!audio_signal) return;
 
@@ -453,9 +520,9 @@ function drawPointTag(x0, y0) {
   let duration = config.timeMax - config.timeMin;
   let t = x0 * duration;
   let f = (1 - y0) * sr / 2;
-  let sec = t.toFixed(2) + 's';
+  let sec = '@' + t.toFixed(2) + 's';
   let hz = f.toFixed(0) + ' Hz';
-  let text = hz + ' ' + sec;
+  let text = hzToBb(f) + ' ' + sec;
 
   div_point.style.visibility = 'visible';
   div_point.style.left = pct100(x0);
@@ -512,7 +579,7 @@ function drawSelectedArea(area = selected_area, vline_dx = 0) {
     div_sarea.style.visibility = 'visible';
     div_sarea_buttons.style.left = pct100(mix(0.05, 1.00, dx));
     div_sarea_buttons.style.top = pct100(mix(0.00, 0.95, dy));
-    drawPointTag(dx + dw, dy + dh);
+    drawPointTagArea(dx, dw, dy, dh);
   } else {
     div_sarea.style.visibility = 'hidden';
   }
